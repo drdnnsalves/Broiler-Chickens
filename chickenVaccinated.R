@@ -1,5 +1,8 @@
 # Carregar as bibliotecas necessárias
 library(rstan)
+library(tidybayes)
+library(ggplot2)
+library(dplyr)
 
 # Dados de casos e parâmetros
 cases <- c(7, 9, 6, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -24,23 +27,5 @@ data_sir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases
 model <- stan_model("sir_estudo.stan")  # Certifique-se de que o arquivo "sir_estudo.stan" esteja no mesmo diretório
 
 # Ajustar o modelo Stan com os dados
-fit_sir_negbin <- sampling(model, data = data_sir, iter = 400, chains = 2, seed = 0)
+fit_sir_negbin <- sampling(model, data = data_sir, iter = 4000, chains = 8, seed = 0)
 
-# Converter as amostras em um array
-fit_sir_negbin_array <- as.array(fit_sir_negbin)
-
-# Extrair as amostras de beta e gamma
-beta_samples <- fit_sir_negbin_array[, , "beta"]
-gamma_samples <- fit_sir_negbin_array[, , "gamma"]
-
-# Visualizar as distribuições de beta e gamma
-stan_dens(fit_sir_negbin, pars = c("beta", "gamma"), separate_chains = TRUE)
-
-# Salvar as amostras de beta e gamma
-save(beta_samples, gamma_samples, file = "beta_gamma_samples.RData")
-
-# Exibir valores médios estimados de beta e gamma
-beta_est <- mean(beta_samples)
-gamma_est <- mean(gamma_samples)
-cat("Beta estimado:", beta_est, "\n")
-cat("Gamma estimado:", gamma_est, "\n")
