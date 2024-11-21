@@ -1,60 +1,76 @@
-# Carregar as bibliotecas necessárias
-library(deSolve)
+# Carregar bibliotecas
+library(deSolve)  # Para resolver o sistema SIR
+library(tidybayes)  # Para trabalhar com amostras
 library(ggplot2)
+library(purrr)  # Para usar funções como map2
 
-# Carregar os parâmetros estimados de beta e gamma
-load("~/params.RData")
+# Definir a população inicial e as condições iniciais
+N <- 25000  # Aqui você coloca o valor da população inicial
+i0 <- 5  # Número inicial de infectados
+s0 <- N - i0  # Número inicial de suscetíveis
+r0 <- 0  # Número inicial de recuperados
+y0 <- c(S = s0, I = i0, R = r0)  # Condições iniciais
 
-# Parâmetros estimados do modelo SIR
-params <- list(beta = beta_est, gamma = gamma_est, mu = 0.00067)
+# Extração das distribuições a posteriori de beta e gamma
+posterior_samples <- fit_sir_negbin %>%
+  spread_draws(beta, gamma) 
 
-# População total e condições iniciais
-N <- 25000
-I0 <- 7  # Casos iniciais (ajustável conforme necessário)
-R0 <- 0  # Recuperados iniciais
-S0 <- N - I0 - R0  # Calcula suscetíveis iniciais
-y0 <- c(S = S0, I = I0, R = R0)
+# Amostrar valores de beta e gamma (por exemplo, 100 amostras)
+n_samples <- 100
+sampled_params <- posterior_samples %>%
+  sample_n(n_samples) %>%
+  select(beta, gamma)
 
-# Tempo de simulação (30 dias)
-times <- seq(0, 30, by = 1)
-
-# Definir o modelo SIR com mortalidade
+# Função SIR determinística
 sir_model <- function(time, state, parameters) {
   with(as.list(c(state, parameters)), {
-    dS <- -beta * S * I - mu * S  # Equação para suscetíveis
-    dI <- beta * S * I - gamma * I - 4 * mu * I  # Equação para infectados
-    dR <- gamma * I - mu * R  # Equação para recuperados
-    
-    # Imprimir o valor de beta a cada dia no console
-    cat("Dia:", time, " - Beta:", beta, "\n")
-    
-    list(c(dS, dI, dR))  # Retornar as derivadas
+    dS <- -beta * S * I / N
+    dI <- beta * S * I / N - gamma * I
+    dR <- gamma * I
+    list(c(dS, dI, dR))
   })
 }
 
-# Executar a simulação com os parâmetros estimados
-output <- ode(y = y0, times = times, func = sir_model, parms = params)
+# Simulação para cada par de beta e gamma
+sir_results <- sampled_params %>%
+  mutate(
+    simulation = map2(beta, gamma, ~ {
+      # Parâmetros do modelo
+      parameters <- c(beta = .x, gamma = .y, N = N)
+      # Condições iniciais
+      state <- c(S = s0, I = i0, R = r0)
+      # Resolução do sistema SIR
+      as.data.frame(ode(y = state, times = t, func = sir_model, parms = parameters))
+    })
+  )
 
-# Converter os resultados em um data.frame
-output_df <- as.data.frame(output)
+# Consolidar as simulações
+simulated_data <- sir_results %>%
+  unnest(simulation) %>%
+  group_by(time) %>%
+  summarize(
+    S_mean = mean(S),
+    I_mean = mean(I),
+    R_mean = mean(R)
+  )
 
-# Calcular o número de vivos
-output_df$Vivos <- output_df$S + output_df$I + output_df$R
-
-# Plotar os resultados
-ggplot(data = output_df, aes(x = time)) +
-  geom_line(aes(y = S, color = "Suscetíveis")) +
-  geom_line(aes(y = I, color = "Infectados")) +
-  geom_line(aes(y = R, color = "Recuperados")) +
-  geom_line(aes(y = Vivos, color = "Vivos")) +  # Adiciona a curva de Vivos
-  labs(title = "Modelo SIR Simulado (Com Parâmetros Estimados)", x = "Tempo (dias)", y = "População") +
-  scale_color_manual(values = c("Suscetíveis" = "blue", "Infectados" = "red", "Recuperados" = "green", "Vivos" = "purple")) +
+# Gráfico das simulações sem intervalo de incerteza (sem geom_ribbon)
+ggplot(simulated_data, aes(x = time)) +
+  geom_line(aes(y = I_mean), color = "red", size = 1, alpha = 0.7) +
+  geom_line(aes(y = S_mean), color = "blue", size = 1, alpha = 0.7) +
+  geom_line(aes(y = R_mean), color = "green", size = 1, alpha = 0.7) +
+  labs(
+    title = "Simulações do Modelo SIR com Distribuições Posteriores",
+    x = "Tempo (dias)",
+    y = "População",
+    color = "Componente"
+  ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(hjust = 0.5, size = 18),  
-    axis.title.x = element_text(size = 16),  
-    axis.title.y = element_text(size = 16), 
-    axis.text = element_text(size = 14),  
-    legend.text = element_text(size = 14),  
-    legend.title = element_blank()
+    plot.title = element_text(hjust = 0.5, size = 18),
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 16)
   )
