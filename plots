@@ -1,0 +1,44 @@
+# Carregar bibliotecas
+library(rstan)
+library(tidybayes)
+library(ggplot2)
+library(tidyr)  # Certificar-se de carregar o pacote tidyr para pivot_longer
+
+# Extração das amostras a posteriori do modelo ajustado
+posterior_samples <- fit_sir_negbin %>%
+  spread_draws(beta, gamma)  # Obtém as amostras de beta e gamma
+
+# Calcular estatísticas descritivas
+stats <- posterior_samples %>%
+  pivot_longer(cols = c("beta", "gamma"), names_to = "parameter", values_to = "value") %>%
+  group_by(parameter) %>%
+  summarize(
+    mean = mean(value),
+    median = median(value),
+    sd = sd(value),
+    lower_95 = quantile(value, 0.025),  # Limite inferior do intervalo de 95%
+    upper_95 = quantile(value, 0.975)   # Limite superior do intervalo de 95%
+  )
+
+# Exibir as estatísticas no terminal
+print(stats)
+
+# Criar o gráfico das distribuições a posteriori
+posterior_samples %>%
+  pivot_longer(cols = c("beta", "gamma"), names_to = "parameter", values_to = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_density(fill = "lightblue", alpha = 0.7) +  # Gráfico de densidade
+  facet_wrap(~ parameter, scales = "free", ncol = 2) +  # Facetas para cada parâmetro
+  labs(
+    title = "Distribuições a Posteriori dos Parâmetros",
+    x = "Valor",
+    y = "Densidade"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18),
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    strip.text = element_text(size = 16)
+  )
